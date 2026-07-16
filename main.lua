@@ -35,6 +35,11 @@ Scene.addLight("directional", 0.2, nil, { x = 1, y = 4, z = 4 })
 
 Camera = {
 	position = { x = 1, y = 0, z = 0 },
+	rotation = {
+		{ 0.7, 0, -0.7 },
+		{ 0, 1, 0 },
+		{ 0.7, 0, 0.7 },
+	},
 }
 
 Viewport = {
@@ -58,42 +63,34 @@ function GetViewportPx(x, y)
 		z = PROJECTION_PLANE_Z,
 	}
 end
-
-function Dot(V1, V2)
-	return (V1.x * V2.x) + (V1.y * V2.y) + (V1.z * V2.z)
-end
-
-function Mult(V1, V2)
-	return { x = (V1.x * V2.x), y = (V1.y * V2.y), z = (V1.z * V2.z) }
-end
-
-function Add(V1, V2)
-	return { x = (V1.x + V2.x), y = (V1.y + V2.y), z = (V1.z + V2.z) }
-end
-
-function Sub(V1, V2)
-	return { x = (V1.x - V2.x), y = (V1.y - V2.y), z = (V1.z - V2.z) }
-end
-
-function Negative(V)
-	return { x = -V.x, y = -V.y, z = -V.z }
-end
-
-function VLength(V)
-	return math.sqrt(V.x * V.x + V.y * V.y + V.z * V.z)
-end
+Vec = {
+	dot = function(V1, V2)
+		return (V1.x * V2.x) + (V1.y * V2.y) + (V1.z * V2.z)
+	end,
+	mult = function(V1, V2)
+		return { x = (V1.x * V2.x), y = (V1.y * V2.y), z = (V1.z * V2.z) }
+	end,
+	add = function(V1, V2)
+		return { x = (V1.x + V2.x), y = (V1.y + V2.y), z = (V1.z + V2.z) }
+	end,
+	sub = function(V1, V2)
+		return { x = (V1.x - V2.x), y = (V1.y - V2.y), z = (V1.z - V2.z) }
+	end,
+	neg = function(V)
+		return { x = -V.x, y = -V.y, z = -V.z }
+	end,
+	length = function(V)
+		return math.sqrt(V.x * V.x + V.y * V.y + V.z * V.z)
+	end,
+}
 
 function IntersectRaySphere(origin, direction, sphere)
 	local r = sphere.radius
-	local CO = {
-		x = origin.x - sphere.center.x,
-		y = origin.y - sphere.center.y,
-		z = origin.z - sphere.center.z,
-	}
+	local CO = Vec.sub(origin, sphere.center)
 
-	local a = Dot(direction, direction)
-	local b = 2 * Dot(CO, direction)
-	local c = Dot(CO, CO) - r ^ 2
+	local a = Vec.dot(direction, direction)
+	local b = 2 * Vec.dot(CO, direction)
+	local c = Vec.dot(CO, CO) - r ^ 2
 
 	local discriminant = b ^ 2 - 4 * a * c
 	if discriminant < 0 then
@@ -159,19 +156,19 @@ function TraceRay(origin, direction, t_min, t_max, recursion_depth)
 	if recursion_depth <= 0 or r <= 0 then
 		return local_color
 	end
-	normal = { x = normal.x / VLength(normal), y = normal.y / VLength(normal), z = normal.z / VLength(normal) }
-	local ray = ReflectRay(Negative(direction), normal)
+	normal = { x = normal.x / Vec.length(normal), y = normal.y / Vec.length(normal), z = normal.z / Vec.length(normal) }
+	local ray = ReflectRay(Vec.neg(direction), normal)
 	local reflected_color = TraceRay(position, ray, 0.001, math.huge, recursion_depth - 1)
 
-	local trm_1 = Mult(local_color, { x = (1 - r), y = (1 - r), z = (1 - r) })
-	return Add(trm_1, { x = reflected_color.x * r, y = reflected_color.y * r, z = reflected_color.z * r })
+	local trm_1 = Vec.mult(local_color, { x = (1 - r), y = (1 - r), z = (1 - r) })
+	return Vec.add(trm_1, { x = reflected_color.x * r, y = reflected_color.y * r, z = reflected_color.z * r })
 end
 
 function ReflectRay(ray, normal)
-	return Sub(
-		Mult(
-			Mult({ x = 2, y = 2, z = 2 }, normal),
-			{ x = Dot(normal, ray), y = Dot(normal, ray), z = Dot(normal, ray) }
+	return Vec.sub(
+		Vec.mult(
+			Vec.mult({ x = 2, y = 2, z = 2 }, normal),
+			{ x = Vec.dot(normal, ray), y = Vec.dot(normal, ray), z = Vec.dot(normal, ray) }
 		),
 		ray
 	)
@@ -186,28 +183,28 @@ function ComputeLighting(position, normal, direction, s)
 			intensity = intensity + light.intensity
 		else
 			if light.type == "point" then
-				light_position = Sub(light.position, position)
+				light_position = Vec.sub(light.position, position)
 				t_max = 1
 			else
 				light_position = light.direction
 				t_max = math.huge
 			end
 
-			shadow_sphere, shadow_t = ClosestIntersection(position, light_position, 0.001, t_max)
+			local shadow_sphere, shadow_t = ClosestIntersection(position, light_position, 0.001, t_max)
 			if shadow_sphere ~= nil then
 				goto continue
 			end
-			local n_dot_1 = Dot(normal, light_position)
+			local n_dot_1 = Vec.dot(normal, light_position)
 			if n_dot_1 > 0 then
-				intensity = intensity + light.intensity * n_dot_1 / (VLength(normal) * VLength(light_position))
+				intensity = intensity + light.intensity * n_dot_1 / (Vec.length(normal) * Vec.length(light_position))
 			end
 
 			if s ~= -1 then
 				local ray = ReflectRay(light_position, normal)
-				local r_dot_v = Dot(ray, direction)
+				local r_dot_v = Vec.dot(ray, direction)
 				if r_dot_v > 0 then
 					intensity = intensity
-						+ light.intensity * math.pow((r_dot_v / (VLength(ray) * VLength(direction))), s)
+						+ light.intensity * math.pow((r_dot_v / (Vec.length(ray) * Vec.length(direction))), s)
 				end
 			end
 		end
@@ -216,10 +213,23 @@ function ComputeLighting(position, normal, direction, s)
 	return intensity
 end
 
+function MultiplyMatrixVector(M, V)
+	local result = { 0, 0, 0 }
+	local vec = { V.x, V.y, V.z }
+
+	for i = 1, 3 do
+		for j = 1, 3 do
+			result[i] = result[i] + (vec[j] * M[i][j])
+		end
+	end
+
+	return { x = result[1], y = result[2], z = result[3] }
+end
+
 function love.draw()
 	for x = -Canvas.width / 2, Canvas.width / 2 do
 		for y = -Canvas.height / 2, Canvas.height / 2 do
-			local direction = GetViewportPx(x, y)
+			local direction = MultiplyMatrixVector(Camera.rotation, GetViewportPx(x, y))
 			local recursion_depth = 3
 			local color = TraceRay(Camera.position, direction, 1, 999999, recursion_depth)
 			love.graphics.setColor({ color.x, color.y, color.z, 1 })
