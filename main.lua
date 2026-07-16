@@ -2,8 +2,8 @@ BACKGROUND_COLOR = { 0, 0, 0, 1 }
 Scene = {
 	spheres = {},
 	lights = {},
-	addSphere = function(c, r, color)
-		table.insert(Scene.spheres, { center = c, radius = r, color = color })
+	addSphere = function(c, r, color, specular)
+		table.insert(Scene.spheres, { center = c, radius = r, color = color, specular = specular })
 	end,
 	addLight = function(type, intensity, position, direction)
 		if type == "ambient" then
@@ -22,9 +22,10 @@ Scene = {
 
 love.window.setMode(1000, 1000)
 
-Scene.addSphere({ x = 0, y = -1, z = 3 }, 1, { 1, 0, 0, 1 })
-Scene.addSphere({ x = 2, y = 0, z = 4 }, 1, { 0, 0, 1, 1 })
-Scene.addSphere({ x = -2, y = 0, z = 4 }, 1, { 0, 1, 0, 1 })
+Scene.addSphere({ x = 0, y = -1, z = 3 }, 1, { 1, 0, 0, 1 }, 500)
+Scene.addSphere({ x = 2, y = 0, z = 4 }, 1, { 0, 0, 1, 1 }, 500)
+Scene.addSphere({ x = -2, y = 0, z = 4 }, 1, { 0, 1, 0, 1 }, 10)
+Scene.addSphere({ x = 0, y = -5001, z = 0 }, 5000, { 1, 1, 0, 1 }, 1000)
 Scene.addLight("ambient", 0.2, nil, nil)
 Scene.addLight("point", 0.6, { x = 2, y = 1, z = 0 })
 Scene.addLight("directional", 0.2, nil, { x = 1, y = 4, z = 4 })
@@ -121,7 +122,12 @@ function TraceRay(origin, direction, t_min, t_max)
 		y = position.y - closest_sphere.center.y,
 		z = position.z - closest_sphere.center.z,
 	}
-	local lighting = ComputeLighting(position, normal)
+	local lighting = ComputeLighting(
+		position,
+		normal,
+		{ x = -direction.x, y = -direction.y, z = -direction.z },
+		closest_sphere.specular
+	)
 	return {
 		closest_sphere.color[1] * lighting,
 		closest_sphere.color[2] * lighting,
@@ -130,12 +136,12 @@ function TraceRay(origin, direction, t_min, t_max)
 	}
 end
 
-function ComputeLighting(position, normal)
-	local i = 0.0
+function ComputeLighting(position, normal, direction, s)
+	local intensity = 0.0
 	local light_position = nil
 	for _, light in ipairs(Scene.lights) do
 		if light.type == "ambient" then
-			i = i + light.intensity
+			intensity = intensity + light.intensity
 		else
 			if light.type == "point" then
 				light_position = Sub(light.position, position)
@@ -145,11 +151,23 @@ function ComputeLighting(position, normal)
 
 			local n_dot_1 = Dot(normal, light_position)
 			if n_dot_1 > 0 then
-				i = i + light.intensity * n_dot_1 / (VLength(normal) * VLength(light_position))
+				intensity = intensity + light.intensity * n_dot_1 / (VLength(normal) * VLength(light_position))
+			end
+
+			if s ~= -1 then
+				local R = {
+					x = 2 * normal.x * n_dot_1 - light_position.x,
+					y = 2 * normal.y * n_dot_1 - light_position.y,
+					z = 2 * normal.z * n_dot_1 - light_position.z,
+				}
+				local r_dot_v = Dot(R, direction)
+				if r_dot_v > 0 then
+					intensity = intensity + light.intensity * math.pow((r_dot_v / VLength(R) * VLength(direction)), s)
+				end
 			end
 		end
 	end
-	return i
+	return intensity
 end
 
 function love.draw()
