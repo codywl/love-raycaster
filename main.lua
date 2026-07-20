@@ -1,3 +1,4 @@
+SIMULTANEOUS_THREADS = 4
 BACKGROUND_COLOR = { x = 0, y = 0, z = 0 }
 Scene = {
 	spheres = {},
@@ -5,7 +6,7 @@ Scene = {
 	addSphere = function(c, r, color, specular, reflective)
 		table.insert(
 			Scene.spheres,
-			{ center = c, radius = r, color = color, specular = specular, reflective = reflective }
+			{ center = c, radius_squared = r, color = color, specular = specular, reflective = reflective }
 		)
 	end,
 	addLight = function(type, intensity, position, direction)
@@ -28,7 +29,7 @@ love.window.setMode(1000, 1000)
 Scene.addSphere({ x = 0, y = -1, z = 3 }, 1, { 1, 0, 0, 1 }, 500, 0.2)
 Scene.addSphere({ x = 2, y = 0, z = 4 }, 1, { 0, 0, 1, 1 }, 500, 0.3)
 Scene.addSphere({ x = -2, y = 0, z = 4 }, 1, { 0, 1, 0, 1 }, 10, 0.4)
-Scene.addSphere({ x = 0, y = -5001, z = 0 }, 5000, { 1, 1, 0, 1 }, 1000, 0.5)
+Scene.addSphere({ x = 0, y = -5001, z = 0 }, 25000000, { 1, 1, 0, 1 }, 1000, 0.5)
 Scene.addLight("ambient", 0.2, nil, nil)
 Scene.addLight("point", 0.6, { x = 2, y = 1, z = 0 })
 Scene.addLight("directional", 0.2, nil, { x = 1, y = 4, z = 4 })
@@ -84,13 +85,12 @@ Vec = {
 	end,
 }
 
-function IntersectRaySphere(origin, direction, sphere)
-	local r = sphere.radius
+function IntersectRaySphere(origin, direction, sphere, a)
+	local r2 = sphere.radius_squared
 	local CO = Vec.sub(origin, sphere.center)
 
-	local a = Vec.dot(direction, direction)
 	local b = 2 * Vec.dot(CO, direction)
-	local c = Vec.dot(CO, CO) - r ^ 2
+	local c = Vec.dot(CO, CO) - r2
 
 	local discriminant = b ^ 2 - 4 * a * c
 	if discriminant < 0 then
@@ -102,11 +102,31 @@ function IntersectRaySphere(origin, direction, sphere)
 	return t1, t2
 end
 
+function AnyIntersection(origin, direction, t_min, t_max)
+	local lastIntersectedSphere = nil
+	local a = Vec.dot(direction, direction)
+
+	for _, sphere in ipairs(Scene.spheres) do
+		if sphere ~= lastIntersectedSphere then
+			local t1, t2 = IntersectRaySphere(origin, direction, sphere, a)
+			if (t_min < t1 and t1 < t_max) or (t_min < t2 and t2 < t_max) then
+				lastIntersectedSphere = sphere
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
 function ClosestIntersection(origin, direction, t_min, t_max)
 	local closest_t = 999999
 	local closest_sphere = nil
+
+	local a = Vec.dot(direction, direction)
+
 	for _, sphere in ipairs(Scene.spheres) do
-		local t1, t2 = IntersectRaySphere(origin, direction, sphere)
+		local t1, t2 = IntersectRaySphere(origin, direction, sphere, a)
 
 		if t_min < t1 and t_max > t1 and t1 < closest_t then
 			closest_t = t1
@@ -118,6 +138,7 @@ function ClosestIntersection(origin, direction, t_min, t_max)
 			closest_sphere = sphere
 		end
 	end
+
 	return closest_sphere, closest_t
 end
 
@@ -134,17 +155,8 @@ function TraceRay(origin, direction, t_min, t_max, recursion_depth)
 		z = closest_t * direction.z,
 	}
 	position = { x = position.x + origin.x, y = position.y + origin.y, z = position.z + origin.z }
-	local normal = {
-		x = position.x - closest_sphere.center.x,
-		y = position.y - closest_sphere.center.y,
-		z = position.z - closest_sphere.center.z,
-	}
-	local intensity = ComputeLighting(
-		position,
-		normal,
-		{ x = -direction.x, y = -direction.y, z = -direction.z },
-		closest_sphere.specular
-	)
+	local normal = Vec.sub(position, closest_sphere.center)
+	local intensity = ComputeLighting(position, normal, Vec.neg(direction), closest_sphere.specular)
 
 	local local_color = {
 		x = closest_sphere.color[1] * intensity,
@@ -190,8 +202,7 @@ function ComputeLighting(position, normal, direction, s)
 				t_max = math.huge
 			end
 
-			local shadow_sphere, shadow_t = ClosestIntersection(position, light_position, 0.001, t_max)
-			if shadow_sphere ~= nil then
+			if AnyIntersection(position, light_position, 0.001, t_max) then
 				goto continue
 			end
 			local n_dot_1 = Vec.dot(normal, light_position)
