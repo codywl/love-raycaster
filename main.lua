@@ -1,5 +1,7 @@
 SIMULTANEOUS_THREADS = 4
 BACKGROUND_COLOR = { x = 0, y = 0, z = 0 }
+SUBSAMPLE_AMOUNT = 1
+
 Scene = {
 	spheres = {},
 	lights = {},
@@ -235,11 +237,12 @@ function TraceRay(origin, direction, t_min, t_max, recursion_depth)
 	local normal
 	if closest_triangle ~= nil then
 		normal = closest_normal
-	else
+		closest_object = closest_triangle
+	elseif closest_sphere then
 		normal = Vec.sub(position, closest_sphere.center)
+		closest_object = closest_sphere
 	end
 
-	local closest_object = closest_triangle or closest_sphere
 	local intensity = ComputeLighting(position, normal, Vec.neg(direction), closest_object.specular)
 
 	local local_color = {
@@ -363,7 +366,6 @@ function love.keypressed(key)
 	}
 end
 
-SUBSAMPLE_AMOUNT = 12
 function love.draw()
 	for x = -Canvas.width / 2, Canvas.width / 2, SUBSAMPLE_AMOUNT do
 		for y = -Canvas.height / 2, Canvas.height / 2, SUBSAMPLE_AMOUNT do
